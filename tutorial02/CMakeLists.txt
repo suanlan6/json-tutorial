@@ -1,10 +1,11 @@
-cmake_minimum_required (VERSION 2.6)
-project (leptjson_test C)
+cmake_minimum_required(VERSION 3.0.0)
+project(TUTORIAL02 VERSION 0.1.0)
 
-if (CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ansi -pedantic -Wall")
-endif()
+include(CTest)
+enable_testing()
 
-add_library(leptjson leptjson.c)
-add_executable(leptjson_test test.c)
-target_link_libraries(leptjson_test leptjson)
+add_executable(TUTORIAL02 test.cpp leptjson.cpp)
+
+set(CPACK_PROJECT_NAME ${PROJECT_NAME})
+set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
+include(CPack)
