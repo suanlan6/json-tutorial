@@ -17,6 +17,11 @@
 #define ISDIGIT(ch)         ((ch) >= '0' && (ch) <= '9')
 #define ISDIGIT1TO9(ch)     ((ch) >= '1' && (ch) <= '9')
 #define PUTC(c, ch)         do { *(char*)lept_context_push(c, sizeof(char)) = (ch); } while(0)
+#define ISHEXUPPER(ch)      ((ch) >= 'A' && (ch) <= 'F')
+#define ISHEXLOWWER(ch)     ((ch) >= 'a' && (ch) <= 'f')
+#define ISHEX(ch)           (ISDIGIT(ch) || ISHEXUPPER(ch) || ISHEXLOWWER(ch))
+#define ISHIGH(n)           ((n) >= 0xd800 && (n) <= 0xdbff)
+#define ISLOW(n)            ((n) >= 0xdc00 && (n) <= 0xdfff)
 
 typedef struct {
     const char* json;
@@ -90,21 +95,55 @@ static int lept_parse_number(lept_context* c, lept_value* v) {
     return LEPT_PARSE_OK;
 }
 
+/*To check the num is hex or not, we need to identify both the length and character is 
+  in the range of hex
+*/
 static const char* lept_parse_hex4(const char* p, unsigned* u) {
     /* \TODO */
+    *u = 0;
+    for(int i = 0;i < 4;i++, p++) {
+        if (ISDIGIT(*p)) *u = (*u << 4) + (*p - '0');
+        else if (ISHEXUPPER(*p)) *u = (*u << 4) + (*p - 'A' + 10);
+        else if (ISHEXLOWWER(*p)) *u = *u = (*u << 4) + (*p - 'a' + 10);
+        else return NULL;
+    }
+    if (ISHEX(*p)) 
+        return NULL;
     return p;
 }
 
+static void OutputByte(lept_context* c, unsigned u) {
+    PUTC(c, (char)u);
+}
+
+/*calculate by the rule of unicode*/
 static void lept_encode_utf8(lept_context* c, unsigned u) {
     /* \TODO */
+    if (u >= 0x0000 && u <= 0x007f) PUTC(c, (char)u);
+    else if (u >= 0x0080 && u <= 0x07FF) {
+        OutputByte(c, (0xC0) | ((u >> 6) & 0xFF));
+        OutputByte(c, (0x80) | ( u       & 0x3F));
+    }
+    else if (u >= 0x0800 && u <= 0xffff) {
+        OutputByte(c, 0xE0 | ((u >> 12) & 0xFF));
+        OutputByte(c, 0x80 | ((u >>  6) & 0x3F));
+        OutputByte(c, 0x80 | ( u        & 0x3F));
+    }
+    else if (u >= 0x10000 && u <= 0x10ffff) {
+        OutputByte(c, 0xF0 | ((u >> 18) & 0xFF));
+        OutputByte(c, 0x80 | ((u >> 12) & 0x3F));
+        OutputByte(c, 0x80 | ((u >>  6) & 0x3F));
+        OutputByte(c, 0x80 | ( u        & 0x3F));
+    }
 }
 
 #define STRING_ERROR(ret) do { c->top = head; return ret; } while(0)
 
 static int lept_parse_string(lept_context* c, lept_value* v) {
     size_t head = c->top, len;
-    unsigned u;
+    unsigned u, q;
     const char* p;
+    int flag = 0;
     EXPECT(c, '\"');
     p = c->json;
     for (;;) {
@@ -129,6 +168,16 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
                         if (!(p = lept_parse_hex4(p, &u)))
                             STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
                         /* \TODO surrogate handling */
+                        if (ISHIGH(u)) {
+                            if (*p != '\\' || *(p + 1) != 'u')
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+                            p += 2;
+                            if (!(p = lept_parse_hex4(p, &q)))
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX);
+                            if (!ISLOW(q))
+                                STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
+                            u = 0x10000 + (u - 0xD800) * 0x400 + (q - 0xDC00);/*multiple also can be replaced with << operator*/
+                        }
                         lept_encode_utf8(c, u);
                         break;
                     default:

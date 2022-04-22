@@ -20,6 +20,22 @@ typedef struct {
     size_t size, top;
 }lept_context;
 
+static int illeagle(char s) {
+    int val = s;
+    return (char)val != s;
+}
+
+static char check_unicode(char ch) {
+    switch (ch) {
+        case 'n': return '\n';
+        case 'b': return '\b';
+        case 'f': return '\f';
+        case 't': return '\t';
+        case 'r': return '\r';
+        default: return ch;
+    }
+}
+
 static void* lept_context_push(lept_context* c, size_t size) {
     void* ret;
     assert(size > 0);
@@ -102,7 +118,20 @@ static int lept_parse_string(lept_context* c, lept_value* v) {
             case '\0':
                 c->top = head;
                 return LEPT_PARSE_MISS_QUOTATION_MARK;
+            case '\\':
+                ch = check_unicode(*p);
+                if (ch == '\"' || ch == '\\' || ch == '/' || ch != *p) p++;
+                else {
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_ESCAPE;
+                }
+                PUTC(c, ch);
+                break;
             default:
+                if ((unsigned char)ch < 0x20) {
+                    c->top = head;
+                    return LEPT_PARSE_INVALID_STRING_CHAR;
+                }
                 PUTC(c, ch);
         }
     }
@@ -154,11 +183,20 @@ lept_type lept_get_type(const lept_value* v) {
 
 int lept_get_boolean(const lept_value* v) {
     /* \TODO */
-    return 0;
+    assert(v != NULL && (v->type == LEPT_TRUE || v->type == LEPT_FALSE));
+    return v->u.n;
 }
 
 void lept_set_boolean(lept_value* v, int b) {
     /* \TODO */
+    assert(v != NULL);
+    if (b) {
+        v->u.n = 1;
+        v->type = LEPT_TRUE;
+    } else {
+        v->u.n = 0;
+        v->type = LEPT_FALSE;
+    }
 }
 
 double lept_get_number(const lept_value* v) {
@@ -168,6 +206,9 @@ double lept_get_number(const lept_value* v) {
 
 void lept_set_number(lept_value* v, double n) {
     /* \TODO */
+    assert(v != NULL);
+    v->type = LEPT_NUMBER;
+    v->u.n = n;
 }
 
 const char* lept_get_string(const lept_value* v) {
